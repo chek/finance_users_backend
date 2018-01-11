@@ -2,6 +2,9 @@ require 'net/http'
 require 'uri'
 
 class JsonWebToken
+  #https://auth0.com/docs/api-auth/tutorials/verify-access-token
+  #https://auth0.com/docs/quickstart/backend/rails/01-authorization
+  #https://manage.auth0.com/#/clients
   def self.verify(token, aud)
     JWT.decode(token, nil,
                true, # Verify the signature of this token
@@ -37,13 +40,21 @@ class UsersController < ApplicationController
   before_action :set_user, only: [:show, :edit, :update, :destroy]
 
   def endpoint
-    @auth_payload, @auth_header = JsonWebToken.verify(params[:idToken], params[:aud])
-    user = User.where("email = ?", @auth_payload['email']).first
-    if user.blank?
-      user = User.new({'email' => @auth_payload['email'], 'sub' => @auth_payload['sub'], 'tier' => 'free' })
-      user.save
+    tier = 'free'
+    if !params[:idToken].blank? && !params[:aud].blank?
+      @auth_payload, @auth_header = JsonWebToken.verify(params[:idToken], params[:aud])
+      user = User.where("email = ?", @auth_payload['email']).first
+      if user.blank? && !@auth_payload['email'].blank? && !@auth_payload['sub'].blank?
+        user = User.new({'email' => @auth_payload['email'], 'sub' => @auth_payload['sub'], 'tier' => 'free' })
+        user.save
+      end
+      tier = user.tier
     end
-    render :json => {:success => true}
+
+    predictions_raw = Net::HTTP.get URI("http://localhost:3002/indexes/get_predictions.json")
+    predictions = JSON.parse(JSON.parse(predictions_raw)['predictions'])
+
+    render :json => {:success => true, :tier => tier, :predictions =>predictions}
   end
 
   # GET /users
